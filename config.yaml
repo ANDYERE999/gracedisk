@@ -1,6 +1,6 @@
 admin:
   username: admin
-  password: your_strong_password_here # 请务必修改为一个强密码
+  password: GraceDisk123456 # 请务必修改为一个强密码
 
 # 请将此路径修改为您希望管理的文件夹的绝对路径
 # 在Windows上，路径示例: "C:/Users/YourUser/Documents" (请使用正斜杠 /)
@@ -31,6 +31,6 @@ visitor_storage_path: "D:\\软件安装包\\"
 
 # 服务器配置
 server:
-  host: "127.0.0.1"  # 设置为 "0.0.0.0" 以向公网开放
-  port: 5000          # 自定义端口
-  debug: true         # 生产环境请设置为 false
+  host: "0.0.0.0"  # 设置为 "0.0.0.0" 以向公网开放
+  port: 5001          # 自定义端口
+  debug: false         # 生产环境请设置为 false

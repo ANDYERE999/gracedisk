@@ -45,4 +45,5 @@ temp/
 userfiles/
 # 自定义背景图片（用户可自定义）
 *.bak.png
+*.backup.png
 

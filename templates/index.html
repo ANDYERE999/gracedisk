@@ -192,13 +192,13 @@
                             {% if get_file_type(item.name) != 'other' %}
                             <a href="{{ url_for('preview_file', path=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
                                class="action-icon preview-icon" title="预览">
-                                👁️
+                                👁️ 预览
                             </a>
                             {% endif %}
                             <a href="{{ url_for('download_file', filename=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
                                class="action-icon download-icon" title="下载"
                                onclick="recordDownload('{{ (current_subpath + '/' + item.name) if current_subpath else item.name }}', {{ item.size if item.size != '-' else 0 }})">
-                                ⬇️
+                                ⬇️ 下载
                             </a>
                         </div>
                         {% endif %}
