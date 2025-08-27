@@ -1,0 +1,11 @@
+# GraceDisk 文件管理系统依赖
+
+# Web 框架
+Flask==2.3.2
+Werkzeug==2.3.7
+
+# 配置文件处理
+PyYAML==6.0.1
+
+# 系统监控 (仪表盘功能需要)
+psutil==5.9.5

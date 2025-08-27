@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}编辑用户 - GraceDisk{% endblock %}
+
+{% block head %}
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .container { max-width: 500px; }
+        .card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 2rem 3rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); }
+        h1 { text-align: center; color: #333; margin-bottom: 1.5rem; }
+        .form-group { margin-bottom: 1.25rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; color: #555; font-weight: 500; }
+        .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; transition: border-color 0.2s; }
+        .form-group input:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25); }
+        .form-group .help-text { font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem; }
+        .btn-group { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #5a6268; }
+        .error-message { color: #dc3545; margin-top: 0.5rem; font-size: 0.9rem; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="container">
+        <div class="card">
+            <h1>编辑用户: {{ user.username }}</h1>
+            <form method="post">
+                <div class="form-group">
+                    <label for="password">新密码</label>
+                    <input type="password" id="password" name="password">
+                    <p class="help-text">如需修改密码，请在此输入新密码。留空则表示不修改。</p>
+                </div>
+                <div class="form-group">
+                    <label for="quota_gb">空间配额 (GB)</label>
+                    <input type="number" id="quota_gb" name="quota_gb" value="{{ user.quota_gb }}" min="1" required>
+                </div>
+                {% if error %}
+                    <p class="error-message">{{ error }}</p>
+                {% endif %}
+                <div class="btn-group">
+                    <button type="submit" class="btn">保存更改</button>
+                    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">取消</a>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

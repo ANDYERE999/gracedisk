@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}文件历史 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="header">
+        <h1>文件操作历史</h1>
+        <a href="{{ url_for('root') }}" class="back-link">返回文件</a>
+    </header>
+
+    <div class="history-container">
+        {% if not operations %}
+            <div class="empty-state">
+                <div class="empty-icon">📄</div>
+                <h3>暂无操作记录</h3>
+                <p>您还没有进行过文件上传或下载操作</p>
+            </div>
+        {% else %}
+            <div class="history-list">
+                {% for operation in operations %}
+                <div class="history-item {{ operation.operation_type }}">
+                    <div class="operation-icon">
+                        {% if operation.operation_type == 'upload' %}
+                            ⬆️
+                        {% else %}
+                            ⬇️
+                        {% endif %}
+                    </div>
+                    <div class="operation-details">
+                        <h4>{{ operation.file_path }}</h4>
+                        <div class="operation-meta">
+                            <span class="operation-type">
+                                {% if operation.operation_type == 'upload' %}
+                                    上传文件
+                                {% else %}
+                                    下载文件
+                                {% endif %}
+                            </span>
+                            {% if operation.file_size %}
+                                <span class="file-size">{{ format_file_size(operation.file_size) }}</span>
+                            {% endif %}
+                            <span class="operation-time">{{ operation.created_at }}</span>
+                        </div>
+                    </div>
+                    <div class="operation-status {{ operation.status }}">
+                        {% if operation.status == 'completed' %}
+                            ✅ 已完成
+                        {% elif operation.status == 'failed' %}
+                            ❌ 失败
+                        {% else %}
+                            ⏳ 进行中
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.history-container {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    margin-top: 2rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+}
+
+.header h1 {
+    margin: 0;
+    color: #343a40;
+}
+
+.back-link {
+    color: #007bff;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border: 1px solid #007bff;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.back-link:hover {
+    background: #007bff;
+    color: white;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: #6c757d;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.history-item {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.2s;
+}
+
+.history-item:hover {
+    transform: translateY(-2px);
+}
+
+.history-item.upload {
+    border-left: 4px solid #28a745;
+}
+
+.history-item.download {
+    border-left: 4px solid #007bff;
+}
+
+.operation-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.operation-details {
+    flex: 1;
+}
+
+.operation-details h4 {
+    margin: 0 0 0.5rem 0;
+    color: #343a40;
+    font-size: 1rem;
+}
+
+.operation-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.operation-type {
+    background: rgba(0, 123, 255, 0.1);
+    color: #007bff;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.upload .operation-type {
+    background: rgba(40, 167, 69, 0.1);
+    color: #28a745;
+}
+
+.file-size {
+    background: rgba(108, 117, 125, 0.1);
+    color: #6c757d;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
+.operation-status {
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.operation-status.completed {
+    background: rgba(40, 167, 69, 0.1);
+    color: #28a745;
+}
+
+.operation-status.failed {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.operation-status.in_progress {
+    background: rgba(255, 193, 7, 0.1);
+    color: #ffc107;
+}
+
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    
+    .history-item {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+    }
+    
+    .operation-meta {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+
+{% block title %}文件 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="app-container">
+    <!-- Left Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+        <h1>GraceDisk</h1>
+        </div>
+        
+                <div class="sidebar-section">
+            <div class="user-info">
+                <span>欢迎, <strong>{{ session.username }}</strong>!</span>
+            </div>
+            <div class="nav-buttons">
+                {% if session.is_admin %}
+                <a href="{{ url_for('dashboard') }}" class="sidebar-btn nav-btn">
+                    <i class="icon">📊</i> 仪表盘
+                </a>
+                <a href="{{ url_for('manage_users') }}" class="sidebar-btn nav-btn">
+                    <i class="icon">👥</i> 用户管理
+                </a>
+                {% endif %}
+                {% if not session.is_visitor %}
+                <a href="{{ url_for('manage_shares') }}" class="sidebar-btn nav-btn">
+                    <i class="icon">📤</i> 分享管理
+                </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="sidebar-btn nav-btn sidebar-btn-logout">
+                    <i class="icon">🚪</i> 登出
+                </a>
+            </div>
+        </div>
+
+        {% if not session.is_visitor %}
+        <div class="sidebar-section">
+            <h3>文件操作</h3>
+            <button class="sidebar-btn" onclick="createNewFolder()">
+                <i class="icon">📁</i> 新建文件夹
+            </button>
+            <button class="sidebar-btn" onclick="showRenameDialog()">
+                <i class="icon">✏️</i> 重命名
+            </button>
+            <button class="sidebar-btn" onclick="shareSelected()" id="share-btn" disabled>
+                <i class="icon">🔗</i> 分享选中
+            </button>
+            <button class="sidebar-btn" onclick="downloadSelected()" id="download-btn" disabled>
+                <i class="icon">⬇️</i> 下载选中
+            </button>
+            <button class="sidebar-btn sidebar-btn-danger" onclick="deleteSelected()" id="delete-btn" disabled>
+                <i class="icon">🗑️</i> 删除选中
+            </button>
+        </div>
+        {% else %}
+        <div class="sidebar-section">
+            <h3>访客模式</h3>
+            <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem; text-align: center; padding: 1rem;">
+                您正在以访客身份浏览<br>
+                只能预览和下载文件
+            </p>
+            <button class="sidebar-btn" onclick="downloadSelected()" id="download-btn" disabled>
+                <i class="icon">⬇️</i> 下载选中
+            </button>
+        </div>
+        {% endif %}
+
+        <!-- Storage Info -->
+        {% if storage_info %}
+        <div class="sidebar-section">
+            <h3>存储空间</h3>
+            <div class="storage-info">
+                {% if storage_info.is_disk %}
+                    <p><strong>磁盘空间</strong></p>
+                    <p>{{ format_file_size(storage_info.used) }} / {{ format_file_size(storage_info.total) }}</p>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: {{ (storage_info.used / storage_info.total * 100)|round(2) }}%;">
+                            {{ (storage_info.used / storage_info.total * 100)|round(2) }}%
+                        </div>
+                    </div>
+                {% else %}
+                    <p><strong>个人空间</strong></p>
+                    <p>{{ format_file_size(storage_info.used) }} / {{ format_file_size(storage_info.total) }}</p>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: {{ storage_info.percent }}%;">
+                            {{ storage_info.percent }}%
+                        </div>
+                    </div>
+                    {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+            <!-- Top Bar -->
+        <div class="top-bar">
+            <nav class="breadcrumbs">
+                {% for crumb in breadcrumbs %}
+                {% if not loop.last %}
+                    <a href="{{ url_for('browse', subpath=crumb.path) if crumb.path else url_for('root') }}">{{ crumb.name }}</a>
+                    <span>/</span>
+                {% else %}
+                    <span>{{ crumb.name }}</span>
+                {% endif %}
+                {% endfor %}
+            </nav>
+            
+            <div class="top-buttons">
+                <a href="{{ url_for('file_history') }}" class="top-btn">
+                    <i class="icon">📝</i> 文件历史
+                </a>
+                <a href="{{ url_for('about') }}" class="top-btn">
+                    <i class="icon">ℹ️</i> 关于
+                </a>
+            </div>
+        </div>
+
+            <!-- Upload Zone -->
+        {% if not session.is_visitor %}
+        <div class="upload-zone" onclick="document.getElementById('file-input').click();" id="upload-zone">
+            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" id="upload-form">
+                <input type="file" name="file" id="file-input" multiple hidden onchange="handleFileUpload(this);">
+                <input type="hidden" name="subpath" value="{{ current_subpath }}">
+                <div id="upload-content">
+                    <p>点击或拖拽文件到此区域以上传</p>
+                </div>
+                <div id="upload-progress" style="display: none;">
+                    <p>正在上传文件...</p>
+                    <div class="upload-progress-bar">
+                        <div class="upload-progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div id="upload-status">准备上传...</div>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- File Browser -->
+    <div class="file-browser">
+        <table>
+                            <thead>
+                    <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                        </th>
+                        <th style="width: 45%;">名称</th>
+                        <th>大小</th>
+                        <th>修改日期</th>
+                        <th style="width: 80px;">操作</th>
+                    </tr>
+                </thead>
+                        <tbody>
+                                {% if not items %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 3rem;">这个文件夹是空的</td>
+                </tr>
+                {% endif %}
+                {% for item in items %}
+                <tr class="file-row">
+                    <td>
+                        <input type="checkbox" name="selected-items" value="{{ (current_subpath + '/' + item.name) if current_subpath else item.name }}" onchange="updateButtonStates()">
+                    </td>
+                    <td>
+                        {% set icon_filename = get_icon(item.name, item.is_dir) %}
+                        <img src="{{ url_for('static', filename='icons/' + icon_filename) }}" alt="icon" class="icon">
+
+                        {% if item.is_dir %}
+                            <a href="{{ url_for('browse', subpath=(current_subpath + '/' + item.name) if current_subpath else item.name) }}">{{ item.name }}</a>
+                        {% else %}
+                            <span class="file-name">{{ item.name }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ format_file_size(item.size) }}</td>
+                    <td>{{ item.mtime }}</td>
+                    <td>
+                        {% if not item.is_dir %}
+                        <div class="file-actions">
+                            {% if get_file_type(item.name) != 'other' %}
+                            <a href="{{ url_for('preview_file', path=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
+                               class="action-icon preview-icon" title="预览">
+                                👁️
+                            </a>
+                            {% endif %}
+                            <a href="{{ url_for('download_file', filename=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
+                               class="action-icon download-icon" title="下载"
+                               onclick="recordDownload('{{ (current_subpath + '/' + item.name) if current_subpath else item.name }}', {{ item.size if item.size != '-' else 0 }})">
+                                ⬇️
+                            </a>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                        </tbody>
+                    </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<div id="new-folder-modal" class="modal">
+    <div class="modal-content">
+        <h3>新建文件夹</h3>
+        <input type="text" id="folder-name-input" placeholder="请输入文件夹名称">
+        <div class="modal-buttons">
+            <button onclick="confirmCreateFolder()" class="btn">创建</button>
+            <button onclick="closeModal('new-folder-modal')" class="btn btn-secondary">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="rename-modal" class="modal">
+    <div class="modal-content">
+        <h3>重命名</h3>
+        <select id="rename-item-select">
+            <option value="">请选择要重命名的项目</option>
+            {% for item in items %}
+            <option value="{{ (current_subpath + '/' + item.name) if current_subpath else item.name }}">{{ item.name }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" id="new-name-input" placeholder="请输入新名称">
+        <div class="modal-buttons">
+            <button onclick="confirmRename()" class="btn">重命名</button>
+            <button onclick="closeModal('rename-modal')" class="btn btn-secondary">取消</button>
+        </div>
+                </div>
+            </div>
+
+<div id="share-modal" class="modal">
+    <div class="modal-content">
+        <h3>创建分享链接</h3>
+        <div class="form-group">
+            <label>保护密码（可选）:</label>
+            <input type="password" id="share-password" placeholder="留空表示无密码保护">
+        </div>
+        <div class="form-group">
+            <label>有效期:</label>
+            <select id="share-duration">
+                <option value="1">1天</option>
+                <option value="7">7天</option>
+                <option value="30">30天</option>
+                <option value="90">90天</option>
+                {% if session.is_admin %}
+                <option value="-1">永久</option>
+        {% endif %}
+            </select>
+        </div>
+        <div class="modal-buttons">
+            <button onclick="confirmShare()" class="btn">创建分享</button>
+            <button onclick="closeModal('share-modal')" class="btn btn-secondary">取消</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleSelectAll() {
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    updateButtonStates();
+}
+
+function updateButtonStates() {
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]:checked');
+    const shareBtn = document.getElementById('share-btn');
+    const downloadBtn = document.getElementById('download-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    
+    if (checkboxes.length > 0) {
+        shareBtn.disabled = false;
+        downloadBtn.disabled = false;
+        deleteBtn.disabled = false;
+    } else {
+        shareBtn.disabled = true;
+        downloadBtn.disabled = true;
+        deleteBtn.disabled = true;
+    }
+}
+
+function createNewFolder() {
+    document.getElementById('new-folder-modal').style.display = 'flex';
+}
+
+function showRenameDialog() {
+    document.getElementById('rename-modal').style.display = 'flex';
+}
+
+function shareSelected() {
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要分享的文件');
+        return;
+    }
+    if (checkboxes.length > 1) {
+        alert('一次只能分享一个文件');
+        return;
+    }
+    document.getElementById('share-modal').style.display = 'flex';
+}
+
+function downloadSelected() {
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要下载的项目');
+        return;
+    }
+    
+    const items = Array.from(checkboxes).map(cb => cb.value);
+    
+    // 显示下载提示
+    const downloadBtn = document.getElementById('download-btn');
+    const originalText = downloadBtn.innerHTML;
+    downloadBtn.innerHTML = '<i class="icon">⏳</i> 打包中...';
+    downloadBtn.disabled = true;
+    
+    fetch('/batch_download', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({items: items})
+    }).then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            throw new Error('下载失败');
+        }
+    }).then(blob => {
+        // 创建下载链接
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        
+        // 生成文件名
+        const timestamp = new Date().toISOString().slice(0,19).replace(/[-:T]/g, '');
+        a.download = `gracedisk_files_${timestamp}.zip`;
+        
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // 恢复按钮状态
+        downloadBtn.innerHTML = originalText;
+        updateButtonStates();
+    }).catch(error => {
+        alert('下载失败: ' + error.message);
+        downloadBtn.innerHTML = originalText;
+        updateButtonStates();
+    });
+}
+
+function deleteSelected() {
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要删除的项目');
+        return;
+    }
+    
+    const items = Array.from(checkboxes).map(cb => cb.value);
+    if (confirm(`确定要删除选中的 ${items.length} 个项目吗？此操作无法恢复！`)) {
+        fetch('/batch_delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({items: items})
+        }).then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('删除失败');
+            }
+        });
+    }
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+function confirmCreateFolder() {
+    const folderName = document.getElementById('folder-name-input').value.trim();
+    if (!folderName) {
+        alert('请输入文件夹名称');
+        return;
+    }
+    
+    fetch('/create_folder', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: folderName,
+            subpath: '{{ current_subpath }}'
+        })
+    }).then(response => {
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('创建文件夹失败');
+        }
+    });
+}
+
+function confirmRename() {
+    const oldPath = document.getElementById('rename-item-select').value;
+    const newName = document.getElementById('new-name-input').value.trim();
+    
+    if (!oldPath || !newName) {
+        alert('请选择要重命名的项目并输入新名称');
+        return;
+    }
+    
+    fetch('/rename', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            old_path: oldPath,
+            new_name: newName
+        })
+    }).then(response => {
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('重命名失败');
+        }
+    });
+}
+
+function confirmShare() {
+    const checkboxes = document.querySelectorAll('input[name="selected-items"]:checked');
+    if (checkboxes.length !== 1) return;
+    
+    const path = checkboxes[0].value;
+    const password = document.getElementById('share-password').value;
+    const duration = document.getElementById('share-duration').value;
+    
+    fetch('/create_share', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            path: path,
+            password: password,
+            duration: parseInt(duration)
+        })
+    }).then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`分享链接已创建: ${data.link}`);
+            closeModal('share-modal');
+        } else {
+            alert('创建分享失败: ' + data.error);
+        }
+    });
+}
+
+function handleFileUpload(input) {
+    if (input.files.length === 0) return;
+    
+    const uploadContent = document.getElementById('upload-content');
+    const uploadProgress = document.getElementById('upload-progress');
+    const progressFill = document.getElementById('progress-fill');
+    const uploadStatus = document.getElementById('upload-status');
+    
+    // 显示进度界面
+    uploadContent.style.display = 'none';
+    uploadProgress.style.display = 'block';
+    
+    // 模拟上传进度
+    let progress = 0;
+    uploadStatus.textContent = `正在上传: ${input.files[0].name}`;
+    
+    const progressInterval = setInterval(() => {
+        progress += Math.random() * 10;
+        if (progress >= 95) {
+            progress = 95;
+            uploadStatus.textContent = '正在处理文件...';
+        }
+        progressFill.style.width = progress + '%';
+        
+        if (progress >= 95) {
+            clearInterval(progressInterval);
+            // 实际提交表单
+            document.getElementById('upload-form').submit();
+        }
+    }, 100);
+}
+
+function recordDownload(filePath, fileSize) {
+    // 记录下载操作到历史
+    fetch('/record_download', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            file_path: filePath,
+            file_size: fileSize
+        })
+    }).catch(error => {
+        console.log('记录下载历史失败:', error);
+    });
+}
+</script>
+{% endblock %}

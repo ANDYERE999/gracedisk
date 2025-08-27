@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}关于 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="header">
+        <h1>{{ about.title }}</h1>
+        <div class="version-badge">{{ about.version }}</div>
+        <a href="{{ url_for('root') }}" class="back-link">返回文件</a>
+    </header>
+
+    <div class="about-container">
+        <div class="about-content">
+            <div class="description">
+                {{ about.description | replace('\n', '<br>') | safe }}
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>安全可靠</h3>
+                    <p>多层权限控制，保护您的数据安全</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3>高效便捷</h3>
+                    <p>支持批量操作，提升工作效率</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3>现代设计</h3>
+                    <p>毛玻璃UI设计，带来舒适体验</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>智能监控</h3>
+                    <p>实时显示存储使用情况</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="about-footer">
+            {{ about.footer }}
+        </footer>
+    </div>
+</div>
+
+<style>
+.about-container {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    margin-top: 2rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+}
+
+.header h1 {
+    margin: 0;
+    background: linear-gradient(135deg, #23AAF2, #5B3ED3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 2rem;
+}
+
+.version-badge {
+    background: linear-gradient(135deg, #23AAF2, #5B3ED3);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.back-link {
+    color: #007bff;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border: 1px solid #007bff;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.back-link:hover {
+    background: #007bff;
+    color: white;
+}
+
+.description {
+    font-size: 1.1rem;
+    line-height: 1.8;
+    color: #495057;
+    margin-bottom: 3rem;
+    text-align: center;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+.feature-card {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+    transition: transform 0.2s;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+}
+
+.feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+    margin: 0 0 1rem 0;
+    color: #343a40;
+    font-size: 1.2rem;
+}
+
+.feature-card p {
+    margin: 0;
+    color: #6c757d;
+    line-height: 1.6;
+}
+
+.about-footer {
+    text-align: center;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    color: #6c757d;
+    font-style: italic;
+}
+
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}

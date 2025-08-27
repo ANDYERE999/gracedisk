@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}分享链接错误 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="error-container">
+        <div class="error-icon">
+            {% if error_type == 'invalid' %}
+                🔗❌
+            {% elif error_type == 'expired' %}
+                ⏰
+            {% elif error_type == 'not_found' %}
+                📁❌
+            {% else %}
+                ❌
+            {% endif %}
+        </div>
+        
+        <h1>分享链接出现问题</h1>
+        
+        <p class="error-message">{{ message }}</p>
+        
+        <div class="error-actions">
+            {% if error_type == 'expired' %}
+                <p class="suggestion">建议联系分享者重新创建分享链接。</p>
+            {% elif error_type == 'invalid' %}
+                <p class="suggestion">请确认分享链接是否正确，或联系分享者获取有效链接。</p>
+            {% elif error_type == 'not_found' %}
+                <p class="suggestion">文件可能已被删除或移动，请联系分享者确认。</p>
+            {% endif %}
+            
+            <a href="{{ url_for('login') }}" class="btn">返回登录页面</a>
+        </div>
+    </div>
+</div>
+
+<style>
+.error-container {
+    max-width: 500px;
+    margin: 4rem auto;
+    text-align: center;
+    padding: 2rem;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+
+.error-icon {
+    font-size: 4rem;
+    margin-bottom: 1.5rem;
+}
+
+.error-container h1 {
+    color: #dc3545;
+    margin-bottom: 1rem;
+    font-size: 1.75rem;
+}
+
+.error-message {
+    font-size: 1.1rem;
+    color: #6c757d;
+    margin-bottom: 2rem;
+}
+
+.suggestion {
+    font-size: 0.95rem;
+    color: #495057;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+}
+
+.error-actions .btn {
+    background-color: #007bff;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    text-decoration: none;
+    border-radius: 6px;
+    display: inline-block;
+    transition: background-color 0.2s;
+}
+
+.error-actions .btn:hover {
+    background-color: #0056b3;
+}
+</style>
+{% endblock %}

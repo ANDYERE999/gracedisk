@@ -1,0 +1,48 @@
+.venv/
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+# IDE 配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+# Linux
+*~
+# 数据库文件（会自动创建）
+*.db
+*.sqlite
+*.sqlite3
+instance/
+gracedisk.db
+users.db
+# 日志文件
+*.log
+logs/
+# 临时文件
+tmp/
+temp/
+*.tmp
+# 用户上传的文件目录（可选择性忽略）
+userfiles/
+# 自定义背景图片（用户可自定义）
+static/images/background.png
+

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}分享管理 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="container">
+    <header class="header">
+        <h1>分享管理</h1>
+        <div class="user-info">
+            <a href="{{ url_for('root') }}">返回文件</a>
+            <a href="{{ url_for('logout') }}">登出</a>
+        </div>
+    </header>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="shares-container">
+        {% if not shares %}
+            <div class="empty-state">
+                <div class="empty-icon">📄</div>
+                <h3>暂无分享</h3>
+                <p>您还没有创建任何分享链接</p>
+                <a href="{{ url_for('root') }}" class="btn">去创建分享</a>
+            </div>
+        {% else %}
+            <div class="shares-list">
+                {% for share in shares %}
+                <div class="share-item">
+                    <div class="share-info">
+                        <h4>{{ share.file_path }}</h4>
+                        <div class="share-meta">
+                            {% if session.is_admin and share.username != session.username %}
+                                <span class="share-owner">分享者: {{ share.username }}</span>
+                            {% endif %}
+                            <span class="share-date">创建时间: {{ share.created_at }}</span>
+                            {% if share.expires_at %}
+                                <span class="share-expires">过期时间: {{ share.expires_at }}</span>
+                            {% else %}
+                                <span class="share-permanent">永久有效</span>
+                            {% endif %}
+                            {% if share.password_hash %}
+                                <span class="share-protected">🔒 密码保护</span>
+                            {% endif %}
+                        </div>
+                        <div class="share-link">
+                            <input type="text" value="{{ url_for('shared_file', token=share.token, _external=True) }}" readonly class="link-input">
+                            <button onclick="copyLink(this)" class="btn btn-sm">复制链接</button>
+                        </div>
+                    </div>
+                    <div class="share-actions">
+                        <a href="{{ url_for('delete_share', share_id=share.id) }}" 
+                           class="btn btn-danger btn-sm"
+                           onclick="return confirm('确定要删除这个分享吗？');">删除</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.shares-container {
+    margin-top: 2rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: #6c757d;
+    margin-bottom: 2rem;
+}
+
+.shares-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.share-item {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.share-info {
+    flex: 1;
+}
+
+.share-info h4 {
+    margin: 0 0 1rem 0;
+    color: #343a40;
+    font-size: 1.1rem;
+}
+
+.share-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.share-meta span {
+    background: #f8f9fa;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    color: #6c757d;
+}
+
+.share-permanent {
+    background: #d4edda !important;
+    color: #155724 !important;
+}
+
+.share-protected {
+    background: #fff3cd !important;
+    color: #856404 !important;
+}
+
+.share-owner {
+    background: #e2e3e5 !important;
+    color: #495057 !important;
+}
+
+.share-link {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.link-input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: #f8f9fa;
+    color: #6c757d;
+}
+
+.share-actions {
+    margin-left: 1rem;
+}
+
+@media (max-width: 768px) {
+    .share-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .share-actions {
+        margin-left: 0;
+        margin-top: 1rem;
+        text-align: right;
+    }
+    
+    .share-link {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+</style>
+
+<script>
+function copyLink(button) {
+    const input = button.previousElementSibling;
+    input.select();
+    document.execCommand('copy');
+    
+    const originalText = button.textContent;
+    button.textContent = '已复制!';
+    button.style.background = '#28a745';
+    
+    setTimeout(() => {
+        button.textContent = originalText;
+        button.style.background = '';
+    }, 2000);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+
+{% block title %}管理员仪表盘 - GraceDisk{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>📊 管理员仪表盘</h1>
+        <a href="{{ url_for('root') }}" class="back-btn">返回文件管理</a>
+    </div>
+
+    <!-- 概览卡片 -->
+    <div class="overview-grid">
+        <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+                <h3>用户统计</h3>
+                <div class="stat-number">{{ stats.users.active }}/{{ stats.users.total }}</div>
+                <div class="stat-label">活跃用户/总用户</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">📤</div>
+            <div class="stat-content">
+                <h3>分享链接</h3>
+                <div class="stat-number">{{ stats.shares.active }}/{{ stats.shares.total }}</div>
+                <div class="stat-label">活跃分享/总分享</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">⬆️</div>
+            <div class="stat-content">
+                <h3>文件上传</h3>
+                <div class="stat-number">{{ stats.file_operations.upload.count if stats.file_operations.upload else 0 }}</div>
+                <div class="stat-label">近30天上传次数</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">⬇️</div>
+            <div class="stat-content">
+                <h3>文件下载</h3>
+                <div class="stat-number">{{ stats.file_operations.download.count if stats.file_operations.download else 0 }}</div>
+                <div class="stat-label">近30天下载次数</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 今日登录统计 -->
+    <div class="section-grid">
+        <div class="chart-section">
+            <h2>📈 今日登录统计</h2>
+            <div class="login-stats">
+                <div class="login-type">
+                    <span class="login-badge admin">管理员</span>
+                    <span class="login-count">{{ stats.today_logins.admin if stats.today_logins.admin else 0 }} 次</span>
+                </div>
+                <div class="login-type">
+                    <span class="login-badge user">普通用户</span>
+                    <span class="login-count">{{ stats.today_logins.user if stats.today_logins.user else 0 }} 次</span>
+                </div>
+                <div class="login-type">
+                    <span class="login-badge visitor">访客</span>
+                    <span class="login-count">{{ stats.today_logins.visitor if stats.today_logins.visitor else 0 }} 次</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统资源监控 -->
+        <div class="chart-section">
+            <h2>🖥️ 系统资源</h2>
+            <div class="resource-grid">
+                <div class="resource-item">
+                    <div class="resource-label">CPU 使用率</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ stats.system.cpu_percent }}%"></div>
+                    </div>
+                    <div class="resource-value">{{ "%.1f"|format(stats.system.cpu_percent) }}%</div>
+                </div>
+
+                <div class="resource-item">
+                    <div class="resource-label">内存使用率</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ stats.system.memory.percent }}%"></div>
+                    </div>
+                    <div class="resource-value">{{ "%.1f"|format(stats.system.memory.percent) }}%</div>
+                </div>
+
+                <div class="resource-item">
+                    <div class="resource-label">应用内存使用</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ ((stats.system.process.memory_mb / 1024) / 8 * 100) if stats.system.process.memory_mb > 0 else 0 }}%"></div>
+                    </div>
+                    <div class="resource-value">{{ "%.1f"|format(stats.system.process.memory_mb) }} MB</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详细统计 -->
+    <div class="section-grid">
+        <div class="chart-section">
+            <h2>💾 内存详情</h2>
+            <div class="storage-details">
+                <div class="storage-item">
+                    <span class="storage-label">系统总内存:</span>
+                    <span class="storage-value">{{ (stats.system.memory.total / (1024**3))|round(2) }} GB</span>
+                </div>
+                <div class="storage-item">
+                    <span class="storage-label">已使用内存:</span>
+                    <span class="storage-value">{{ (stats.system.memory.used / (1024**3))|round(2) }} GB</span>
+                </div>
+                <div class="storage-item">
+                    <span class="storage-label">可用内存:</span>
+                    <span class="storage-value">{{ (stats.system.memory.available / (1024**3))|round(2) }} GB</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <h2>📊 应用信息</h2>
+            <div class="process-details">
+                <div class="process-item">
+                    <span class="process-label">应用内存使用:</span>
+                    <span class="process-value">{{ "%.1f"|format(stats.system.process.memory_mb) }} MB</span>
+                </div>
+                <div class="process-item">
+                    <span class="process-label">运行线程数:</span>
+                    <span class="process-value">{{ stats.system.process.threads }}</span>
+                </div>
+                <div class="process-item">
+                    <span class="process-label">系统CPU使用率:</span>
+                    <span class="process-value">{{ "%.1f"|format(stats.system.cpu_percent) }}%</span>
+                </div>
+                <div class="process-item">
+                    <span class="process-label">系统内存使用率:</span>
+                    <span class="process-value">{{ "%.1f"|format(stats.system.memory.percent) }}%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+
+<style>
+.dashboard-container {
+    min-height: 100vh;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-header h1 {
+    color: #fff;
+    margin: 0;
+}
+
+.back-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    text-decoration: none;
+}
+
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.stat-icon {
+    font-size: 2.5rem;
+    opacity: 0.8;
+}
+
+.stat-content h3 {
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.stat-number {
+    color: #23AAF2;
+    font-size: 1.8rem;
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+}
+
+.section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.chart-section {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.chart-section.full-width {
+    grid-column: 1 / -1;
+}
+
+.chart-section h2 {
+    color: #fff;
+    margin: 0 0 1rem 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.login-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.login-type {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.login-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.login-badge.admin {
+    background: rgba(220, 53, 69, 0.2);
+    color: #ff6b6b;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.login-badge.user {
+    background: rgba(40, 167, 69, 0.2);
+    color: #51cf66;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.login-badge.visitor {
+    background: rgba(108, 117, 125, 0.2);
+    color: #adb5bd;
+    border: 1px solid rgba(108, 117, 125, 0.3);
+}
+
+.login-count {
+    color: #fff;
+    font-weight: 600;
+}
+
+.resource-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.resource-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.resource-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+}
+
+.progress-bar {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #23AAF2, #5B3ED3);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.resource-value {
+    color: #fff;
+    font-weight: 600;
+    text-align: right;
+}
+
+.storage-details, .process-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.storage-item, .process-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.storage-item:last-child, .process-item:last-child {
+    border-bottom: none;
+}
+
+.storage-label, .process-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+}
+
+.storage-value, .process-value {
+    color: #fff;
+    font-weight: 600;
+}
+
+.network-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.network-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.network-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+}
+
+.network-value {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+@media (max-width: 768px) {
+    .dashboard-container {
+        padding: 1rem;
+    }
+    
+    .overview-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .section-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .dashboard-header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}
