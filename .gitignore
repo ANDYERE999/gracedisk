@@ -44,5 +44,5 @@ temp/
 # 用户上传的文件目录（可选择性忽略）
 userfiles/
 # 自定义背景图片（用户可自定义）
-static/images/background.png
+*.bak.png
 
