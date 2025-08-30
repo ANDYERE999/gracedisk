@@ -16,7 +16,7 @@
             text-decoration: underline;
         }
         .card {
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.25);
             backdrop-filter: blur(15px);
             -webkit-backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -36,6 +36,24 @@
         thead {
             border-bottom: 2px solid rgba(0, 0, 0, 0.1);
         }
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: #007bff;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid #007bff;      /* 添加边框 */
+            cursor: pointer;                 /* 添加鼠标指针 */
+            font-size: 14px;                /* 添加字体大小 */
+            transition: all 0.2s;            /* 添加过渡效果 */
+            text-decoration: none;           /* 移除下划线 */
+            display: inline-block;           /* 确保按钮行为一致 */
+        }
+
+        .back-btn:hover {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
     </style>
 {% endblock %}
 
@@ -43,7 +61,7 @@
     <div class="container">
         <header class="header">
             <h1>用户管理</h1>
-            <a href="{{ url_for('root') }}">返回文件列表</a>
+            <button class="back-btn" onclick="window.location.href = '{{ url_for('root') }}'">返回文件列表</button>
         </header>
 
         <div class="card">

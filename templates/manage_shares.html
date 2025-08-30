@@ -7,8 +7,7 @@
     <header class="header">
         <h1>分享管理</h1>
         <div class="user-info">
-            <a href="{{ url_for('root') }}">返回文件</a>
-            <a href="{{ url_for('logout') }}">登出</a>
+            <button class="back-btn" onclick="window.location.href = '{{ url_for('root') }}'">返回文件</button>
         </div>
     </header>
 
@@ -41,9 +40,9 @@
                             {% if session.is_admin and share.username != session.username %}
                                 <span class="share-owner">分享者: {{ share.username }}</span>
                             {% endif %}
-                            <span class="share-date">创建时间: {{ share.created_at }}</span>
+                            <span class="share-date">创建时间: {{ share.created_at | format_datetime }}</span>
                             {% if share.expires_at %}
-                                <span class="share-expires">过期时间: {{ share.expires_at }}</span>
+                                <span class="share-expires">过期时间: {{ share.expires_at | format_datetime }}</span>
                             {% else %}
                                 <span class="share-permanent">永久有效</span>
                             {% endif %}
@@ -57,9 +56,8 @@
                         </div>
                     </div>
                     <div class="share-actions">
-                        <a href="{{ url_for('delete_share', share_id=share.id) }}" 
-                           class="btn btn-danger btn-sm"
-                           onclick="return confirm('确定要删除这个分享吗？');">删除</a>
+                        <button onclick="deleteShare({{ share.id }}, this)" 
+                                class="btn btn-danger btn-sm">删除</button>
                     </div>
                 </div>
                 {% endfor %}
@@ -76,7 +74,7 @@
 .empty-state {
     text-align: center;
     padding: 4rem 2rem;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.25);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -91,12 +89,12 @@
 }
 
 .empty-state h3 {
-    color: #6c757d;
+    color: #ffffff;
     margin-bottom: 0.5rem;
 }
 
 .empty-state p {
-    color: #6c757d;
+    color: #ffffff;
     margin-bottom: 2rem;
 }
 
@@ -107,10 +105,9 @@
 }
 
 .share-item {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.25);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
     padding: 1.5rem;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
@@ -125,7 +122,7 @@
 
 .share-info h4 {
     margin: 0 0 1rem 0;
-    color: #343a40;
+    color: #ffffff;
     font-size: 1.1rem;
 }
 
@@ -179,6 +176,25 @@
     margin-left: 1rem;
 }
 
+.back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: #007bff;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid #007bff;      /* 添加边框 */
+            cursor: pointer;                 /* 添加鼠标指针 */
+            font-size: 14px;                /* 添加字体大小 */
+            transition: all 0.2s;            /* 添加过渡效果 */
+            text-decoration: none;           /* 移除下划线 */
+            display: inline-block;           /* 确保按钮行为一致 */
+        }
+
+        .back-btn:hover {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
 @media (max-width: 768px) {
     .share-item {
         flex-direction: column;
@@ -212,6 +228,53 @@ function copyLink(button) {
         button.textContent = originalText;
         button.style.background = '';
     }, 2000);
+}
+
+function deleteShare(shareId, button) {
+    if (!confirm('确定要删除这个分享吗？')) {
+        return;
+    }
+    
+    // 禁用按钮，防止重复点击
+    button.disabled = true;
+    button.textContent = '删除中...';
+    
+    fetch(`/delete_share/${shareId}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            // 删除成功，立即从DOM中移除这个分享项
+            const shareItem = button.closest('.share-item');
+            shareItem.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            shareItem.style.opacity = '0';
+            shareItem.style.transform = 'translateX(-100%)';
+            
+            setTimeout(() => {
+                shareItem.remove();
+                
+                // 检查是否还有分享项，如果没有了显示空状态
+                const sharesList = document.querySelector('.shares-list');
+                if (sharesList && sharesList.children.length === 0) {
+                    location.reload(); // 重新加载显示空状态
+                }
+            }, 300);
+        } else {
+            // 删除失败，恢复按钮状态
+            button.disabled = false;
+            button.textContent = '删除';
+            alert('删除失败，请重试');
+        }
+    })
+    .catch(error => {
+        console.error('删除请求失败:', error);
+        button.disabled = false;
+        button.textContent = '删除';
+        alert('删除失败，请重试');
+    });
 }
 </script>
 {% endblock %}

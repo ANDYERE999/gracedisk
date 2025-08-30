@@ -6,7 +6,10 @@
 <div class="container">
     <header class="header">
         <h1>文件操作历史</h1>
-        <a href="{{ url_for('root') }}" class="back-link">返回文件</a>
+        <div class="header-buttons">
+            <button class="clear-history-btn" onclick="clearHistory()">清空历史</button>
+            <button class="back-btn" onclick="goBack()">返回文件</button>
+        </div>
     </header>
 
     <div class="history-container">
@@ -61,10 +64,9 @@
 
 <style>
 .history-container {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.15);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
     padding: 2rem;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
@@ -92,6 +94,21 @@
     border: 1px solid #007bff;
     border-radius: 6px;
     transition: all 0.2s;
+}
+
+.clear-history-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #007bff;
+    border: 1px solid #007bff;
+    border-radius: 6px;
+    transition: all 0.2s;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+}
+
+.clear-history-btn:hover {
+    background: #007bff;
+    color: white;
 }
 
 .back-link:hover {
@@ -126,7 +143,7 @@
 }
 
 .history-item {
-    background: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.25);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
@@ -215,6 +232,74 @@
     color: #ffc107;
 }
 
+.header-buttons {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.clear-history-btn,
+.back-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #007bff;
+    border: 1px solid #007bff;
+    border-radius: 6px;
+    transition: all 0.2s;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.clear-history-btn:hover,
+.back-btn:hover {
+    background: #007bff;
+    color: white;
+}
+
+/* 可以给不同按钮设置不同的样式 */
+.back-btn {
+    background: rgba(40, 167, 69, 0.1);  /* 绿色背景 */
+    border-color: #28a745;
+    color: #28a745;
+}
+
+.back-btn:hover {
+    background: #28a745;
+    color: white;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+    background-color: #545b62;
+    border-color: #545b62;
+}
+
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
@@ -234,4 +319,36 @@
     }
 }
 </style>
+
+<script>
+function clearHistory() {
+    if (confirm('确定要清空所有操作历史吗？此操作无法恢复！')) {
+        fetch('/clear_history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                alert('历史记录已清空');
+                location.reload();
+            } else {
+                alert('清空失败');
+            }
+        })
+        .catch(error => {
+            alert('清空失败: ' + error.message);
+        });
+    }
+}
+
+function goBack() {
+    // 方法1：使用 window.history.back()
+    window.history.back();
+    
+    // 方法2：或者直接跳转到指定页面
+    // window.location.href = "{{ url_for('root') }}";
+}
+</script>
 {% endblock %}

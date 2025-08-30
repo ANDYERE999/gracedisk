@@ -192,13 +192,13 @@
                             {% if get_file_type(item.name) != 'other' %}
                             <a href="{{ url_for('preview_file', path=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
                                class="action-icon preview-icon" title="预览">
-                                👁️ 预览
+                                👁️
                             </a>
                             {% endif %}
                             <a href="{{ url_for('download_file', filename=(current_subpath + '/' + item.name) if current_subpath else item.name) }}" 
                                class="action-icon download-icon" title="下载"
                                onclick="recordDownload('{{ (current_subpath + '/' + item.name) if current_subpath else item.name }}', {{ item.size if item.size != '-' else 0 }})">
-                                ⬇️ 下载
+                                ⬇️
                             </a>
                         </div>
                         {% endif %}
@@ -326,7 +326,7 @@ function downloadSelected() {
     // 显示下载提示
     const downloadBtn = document.getElementById('download-btn');
     const originalText = downloadBtn.innerHTML;
-    downloadBtn.innerHTML = '<i class="icon">⏳</i> 打包中...';
+    downloadBtn.innerHTML = '<i class="icon">⏳</i> 准备下载...';
     downloadBtn.disabled = true;
     
     fetch('/batch_download', {
@@ -337,29 +337,42 @@ function downloadSelected() {
         body: JSON.stringify({items: items})
     }).then(response => {
         if (response.ok) {
-            return response.blob();
+            return response.json();
         } else {
-            throw new Error('下载失败');
+            return response.json().then(err => {
+                throw new Error(err.error || '下载失败');
+            })
         }
-    }).then(blob => {
-        // 创建下载链接
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        
-        // 生成文件名
-        const timestamp = new Date().toISOString().slice(0,19).replace(/[-:T]/g, '');
-        a.download = `gracedisk_files_${timestamp}.zip`;
-        
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        // 恢复按钮状态
-        downloadBtn.innerHTML = originalText;
-        updateButtonStates();
+    }).then(data => {
+        if (data.success && data.download_links) {
+            // 批量下载文件
+            let downloadCount = 0;
+            const totalSize = data.total_size;
+            const totalFiles = data.total_files;
+
+            // 先提示用户
+            alert(`开始下载 ${totalFiles} 个文件，总大小约 ${(totalSize / 1024 / 1024).toFixed(2)} MB\n请点击确认按钮，并且同意浏览器同时下载多个文件`);
+
+            data.download_links.forEach((file, index) => {
+                setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = file.url;
+                    a.download = file.filename;
+                    
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+
+                    downloadCount++;
+                    if (downloadCount === totalFiles) {
+                        downloadBtn.innerHTML = originalText;
+                        updateButtonStates();
+                    }                    
+                }, index * 1000); // 避免浏览器阻止多文件下载
+            });
+        } else {
+            throw new Error(data.error || '下载失败');
+        }
     }).catch(error => {
         alert('下载失败: ' + error.message);
         downloadBtn.innerHTML = originalText;
@@ -480,33 +493,87 @@ function confirmShare() {
 function handleFileUpload(input) {
     if (input.files.length === 0) return;
     
-    const uploadContent = document.getElementById('upload-content');
-    const uploadProgress = document.getElementById('upload-progress');
-    const progressFill = document.getElementById('progress-fill');
-    const uploadStatus = document.getElementById('upload-status');
+    const file = input.files[0];
+    const fileSize = file.size;
     
-    // 显示进度界面
-    uploadContent.style.display = 'none';
-    uploadProgress.style.display = 'block';
-    
-    // 模拟上传进度
-    let progress = 0;
-    uploadStatus.textContent = `正在上传: ${input.files[0].name}`;
-    
-    const progressInterval = setInterval(() => {
-        progress += Math.random() * 10;
-        if (progress >= 95) {
-            progress = 95;
-            uploadStatus.textContent = '正在处理文件...';
+    // 前端文件大小检查
+    checkFileSize(file).then(canUpload => {
+        if (!canUpload) {
+            return; // 已在checkFileSize中显示错误信息
         }
-        progressFill.style.width = progress + '%';
         
-        if (progress >= 95) {
-            clearInterval(progressInterval);
-            // 实际提交表单
-            document.getElementById('upload-form').submit();
-        }
-    }, 100);
+        const uploadContent = document.getElementById('upload-content');
+        const uploadProgress = document.getElementById('upload-progress');
+        const progressFill = document.getElementById('progress-fill');
+        const uploadStatus = document.getElementById('upload-status');
+        
+        // 显示进度界面
+        uploadContent.style.display = 'none';
+        uploadProgress.style.display = 'block';
+        
+        // 模拟上传进度
+        let progress = 0;
+        uploadStatus.textContent = `正在上传: ${file.name}`;
+        
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 10;
+            if (progress >= 95) {
+                progress = 95;
+                uploadStatus.textContent = '正在处理文件...';
+            }
+            progressFill.style.width = progress + '%';
+            
+            if (progress >= 95) {
+                clearInterval(progressInterval);
+                // 实际提交表单
+                document.getElementById('upload-form').submit();
+            }
+        }, 100);
+    }).catch(error => {
+        alert('文件检查失败: ' + error.message);
+        // 重置上传界面
+        document.getElementById('upload-content').style.display = 'block';
+        document.getElementById('upload-progress').style.display = 'none';
+    });
+}
+
+function checkFileSize(file) {
+    return new Promise((resolve, reject) => {
+        // 获取用户配额信息
+        fetch('/get_user_quota')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    throw new Error(data.error || '无法获取配额信息');
+                }
+                
+                const fileSize = file.size;
+                const availableSpace = data.quota_bytes - data.used_bytes;
+                
+                // 格式化文件大小显示
+                function formatFileSize(bytes) {
+                    if (bytes < 1024) return bytes + ' B';
+                    if (bytes < 1024**2) return (bytes/1024).toFixed(2) + ' KB';
+                    if (bytes < 1024**3) return (bytes/1024**2).toFixed(2) + ' MB';
+                    return (bytes/1024**3).toFixed(2) + ' GB';
+                }
+                
+                if (fileSize > availableSpace) {
+                    alert(`文件过大！\n` +
+                          `文件大小: ${formatFileSize(fileSize)}\n` +
+                          `剩余空间: ${formatFileSize(availableSpace)}\n` +
+                          `请选择较小的文件或清理空间后重试。`);
+                    resolve(false);
+                } else {
+                    resolve(true);
+                }
+            })
+            .catch(error => {
+                console.error('检查配额失败:', error);
+                // 如果前端检查失败，仍然允许上传（后端会进行最终检查）
+                resolve(true);
+            });
+    });
 }
 
 function recordDownload(filePath, fileSize) {

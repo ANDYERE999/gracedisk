@@ -25,6 +25,11 @@ body.has-background {
     color: white;
     padding: 1.5rem;
     box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    position: sticky;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
 }
 
 .sidebar-header h1 {
@@ -148,7 +153,7 @@ body.has-background {
 .main-content {
     flex: 1;
     padding: 2rem;
-    background: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.05);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
 }
@@ -161,7 +166,7 @@ body.has-background {
 .file-browser table {
     width: 100%;
     border-collapse: collapse;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.4);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -186,7 +191,7 @@ body.has-background {
     border-bottom: none;
 }
 .file-browser tbody tr:hover {
-    background-color: #f8f9fa;
+    background-color: rgba(241, 243, 245, 0.6);
 }
 .file-browser a {
     color: #007bff;
@@ -214,7 +219,7 @@ body.has-background {
     text-align: center;
 }
 .upload-zone {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     border: 2px dashed rgba(0, 123, 255, 0.7);
@@ -226,7 +231,7 @@ body.has-background {
     transition: all 0.2s;
 }
 .upload-zone:hover {
-    background: rgba(233, 245, 255, 0.8);
+    background: rgba(233, 245, 255, 0.6);
     border-color: rgba(0, 123, 255, 0.9);
 }
 

@@ -10,12 +10,90 @@ from werkzeug.utils import secure_filename
 import re
 import uuid
 
+def safe_filename(filename):
+    """
+    自定义文件名安全化函数，保留中文字符但移除危险字符
+    """
+    if not filename:
+        return 'untitled'
+    
+    # 移除危险字符，但保留中文等Unicode字符
+    # 只移除文件系统不允许的特殊字符
+    forbidden_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
+    for char in forbidden_chars:
+        filename = filename.replace(char, '_')
+    
+    # 移除前后空格和点号（防止隐藏文件或路径遍历）
+    filename = filename.strip('. ')
+    
+    # 如果文件名为空或只包含点号，使用默认名称
+    if not filename or filename.replace('.', '').strip() == '':
+        filename = 'untitled'
+    
+    # 限制文件名长度（考虑文件系统限制）
+    if len(filename.encode('utf-8')) > 255:
+        name, ext = os.path.splitext(filename)
+        # 保留扩展名，截断主文件名
+        max_name_bytes = 255 - len(ext.encode('utf-8'))
+        name_bytes = name.encode('utf-8')[:max_name_bytes]
+        # 确保不在多字节字符中间截断
+        try:
+            filename = name_bytes.decode('utf-8') + ext
+        except UnicodeDecodeError:
+            # 如果截断点在多字节字符中间，向前调整
+            for i in range(1, 4):  # UTF-8最多4字节
+                try:
+                    filename = name_bytes[:-i].decode('utf-8') + ext
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                filename = 'untitled' + ext
+    
+    return filename
+
+
+def parse_datetime_flexible(datetime_str):
+    """
+    灵活解析数据库中的日期时间字符串，支持多种格式
+    """
+    if not datetime_str:
+        return None
+    
+    try:
+        # 尝试解析包含微秒的格式
+        return datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S.%f')
+    except ValueError:
+        try:
+            # 如果失败，尝试不包含微秒的格式
+            return datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            try:
+                # 如果仍然失败，尝试ISO格式
+                return datetime.fromisoformat(datetime_str.replace('T', ' '))
+            except ValueError:
+                # 如果都失败了，返回当前时间作为备用
+                return datetime.now()
+
+
+def format_datetime_for_display(dt):
+    """
+    格式化日期时间用于显示
+    """
+    if isinstance(dt, str):
+        dt = parse_datetime_flexible(dt)
+    if dt:
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    return ''
+
+
 app = Flask(__name__)
 # 设置一个密钥，用于保护 session
 # 在生产环境中，这应该是一个更复杂、更随机的字符串，并且不应该硬编码在代码里
 app.secret_key = 'your_very_secret_key_change_it_later'
 
 # 注册一个辅助函数，使其可以在所有模板中使用
+app.jinja_env.filters['format_datetime'] = format_datetime_for_display
 @app.context_processor
 def utility_processor():
     def format_file_size(size):
@@ -198,13 +276,26 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 username TEXT NOT NULL,
-                login_type TEXT NOT NULL, -- 'user', 'admin', 'visitor'
+                login_type TEXT NOT NULL,
                 ip_address TEXT,
                 user_agent TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             ''')
             print("Table 'login_logs' created.")
+        else:
+            # 确保login_logs表结构正确
+            cursor.execute("PRAGMA table_info(login_logs)")
+            login_logs_columns = [row[1] for row in cursor.fetchall()]
+            required_columns = ['id', 'user_id', 'username', 'login_type', 'ip_address', 'user_agent', 'created_at']
+            
+            for col in required_columns:
+                if col not in login_logs_columns:
+                    if col == 'ip_address':
+                        cursor.execute('ALTER TABLE login_logs ADD COLUMN ip_address TEXT')
+                    elif col == 'user_agent':
+                        cursor.execute('ALTER TABLE login_logs ADD COLUMN user_agent TEXT')
+                    print(f"Added missing column '{col}' to login_logs table.")
 
     conn.commit()
     conn.close()
@@ -485,6 +576,8 @@ def download_file(filename):
 
     if not os.path.exists(file_path) or os.path.isdir(file_path):
         return "File not found", 404
+    
+    # download_file 函数不再记录下载操作，记录逻辑移至前端点击时
 
     return send_file(file_path, as_attachment=True)
 
@@ -556,7 +649,7 @@ def upload_file():
     subpath = request.form.get('subpath', '')
 
     if file:
-        filename = secure_filename(file.filename)
+        filename = safe_filename(file.filename)
         
         # 获取文件大小（放在最开始）
         file.seek(0, os.SEEK_END)
@@ -1050,6 +1143,8 @@ def create_share():
     expires_at = None
     if duration > 0:
         expires_at = datetime.now() + timedelta(days=duration)
+        # 移除微秒部分，确保格式一致性
+        expires_at = expires_at.replace(microsecond=0)
     
     # 处理密码
     password_hash = None
@@ -1093,7 +1188,7 @@ def shared_file(token):
     
     # 检查是否过期
     if share_data['expires_at']:
-        expires_at = datetime.strptime(share_data['expires_at'], '%Y-%m-%d %H:%M:%S')
+        expires_at = parse_datetime_flexible(share_data['expires_at'])
         if datetime.now() > expires_at:
             return render_template('share_error.html',
                                  error_type='expired', 
@@ -1158,23 +1253,48 @@ def manage_shares():
 @password_change_required
 def delete_share(share_id):
     if 'user_id' not in session:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': 'Unauthorized'}), 403
         return redirect(url_for('login'))
     
     db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # 检查权限
-    if session.get('is_admin'):
-        cursor.execute("DELETE FROM shares WHERE id = ?", (share_id,))
-    else:
-        cursor.execute("DELETE FROM shares WHERE id = ? AND user_id = ?", 
-                      (share_id, session['user_id']))
-    
+    try:
+        # 检查权限并删除
+        if session.get('is_admin'):
+            cursor.execute("DELETE FROM shares WHERE id = ?", (share_id,))
+        else:
+            cursor.execute("DELETE FROM shares WHERE id = ? AND user_id = ?", 
+                          (share_id, session['user_id']))
+        
+        affected_rows = cursor.rowcount
         conn.commit()
+        
+        if affected_rows > 0:
+            message = '分享已删除'
+            if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                flash(message, 'success')
+        else:
+            message = '分享不存在或无权限删除'
+            if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                flash(message, 'error')
+            
+    except Exception as e:
+        message = f'删除失败: {str(e)}'
+        if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            flash(message, 'error')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': message}), 500
+    finally:
         conn.close()
 
-    flash('分享已删除', 'success')
+    # 如果是Ajax请求，返回JSON响应
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'message': message})
+    
+    # 否则重定向到管理页面
     return redirect(url_for('manage_shares'))
 
 @app.route('/batch_download', methods=['POST'])
@@ -1189,6 +1309,9 @@ def batch_download():
     if not items:
         return jsonify({'error': '没有选择要下载的项目'}), 400
     
+    if len(items) > 5:
+        return jsonify({'error': '最多只能选择5个项目'}), 400
+    
     # 确定基础路径
     if session.get('is_admin'):
         base_path = app.config['GRACEDISK_CONFIG'].get('storage_path')
@@ -1197,68 +1320,65 @@ def batch_download():
     else:
         base_path = os.path.join('userfiles', session['username'])
     
-    import zipfile
-    import io
-    
-    # 创建内存中的ZIP文件
-    zip_buffer = io.BytesIO()
+    valid_files = []
     total_size = 0
-    
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for item_path in items:
-            try:
-                safe_path = os.path.normpath(item_path).lstrip('.\\/')
-                full_path = os.path.join(base_path, safe_path)
-                
-                if not os.path.abspath(full_path).startswith(os.path.abspath(base_path)):
-                    continue
-                
-                if not os.path.exists(full_path):
-                    continue
-                
-                if os.path.isfile(full_path):
-                    # 添加文件到ZIP
-                    zip_file.write(full_path, os.path.basename(full_path))
-                    total_size += os.path.getsize(full_path)
-                elif os.path.isdir(full_path):
-                    # 添加整个文件夹到ZIP
-                    for root, dirs, files in os.walk(full_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            # 计算相对路径
-                            arcname = os.path.relpath(file_path, os.path.dirname(full_path))
-                            zip_file.write(file_path, arcname)
-                            total_size += os.path.getsize(file_path)
-                            
-            except Exception as e:
-                print(f"Error adding {item_path} to zip: {e}")
+
+    for item in items:
+        try:
+            safe_path = os.path.normpath(item).lstrip('.\\/')
+            full_path = os.path.join(base_path, safe_path)
+            
+            if not os.path.abspath(full_path).startswith(os.path.abspath(base_path)):
                 continue
+            
+            if not os.path.exists(full_path):
+                continue
+
+            if os.path.isfile(full_path):
+                valid_files.append({
+                    'path': item,
+                    'full_path': full_path,
+                    'filename': os.path.basename(full_path),
+                    'size': os.path.getsize(full_path)
+                })
+                total_size+=os.path.getsize(full_path)
+            elif os.path.isdir(full_path):
+                return jsonify({'error':'选择的项目中包含文件夹，请只选择文件'}),400
+        
+        except Exception as e:
+            print(f"Error processing item {item}: {str(e)}")
+            continue
+
+    if not valid_files:
+        return jsonify({'error':'没有可下载的文件'}),400
     
-    zip_buffer.seek(0)
-    
-    # 生成下载文件名
-    from datetime import datetime
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"gracedisk_files_{timestamp}.zip"
-    
-    # 记录下载操作
+    # 记录批量下载操作
     db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO file_operations (user_id, operation_type, file_path, file_size, status) 
         VALUES (?, ?, ?, ?, ?)
-    """, (session['user_id'], 'download', f"批量下载: {', '.join(items[:3])}{'...' if len(items) > 3 else ''}", total_size, 'completed'))
+    """, (session['user_id'], 'download', f"批量下载: {', '.join([f['filename'] for f in valid_files])}", total_size, 'completed'))
     conn.commit()
     conn.close()
+        
+    download_links = []
+    for file_data in valid_files:
+        download_links.append({
+            'path': file_data['path'],
+            'filename': file_data['filename'],
+            'size': file_data['size'],
+            'url': url_for('download_file', filename=file_data['path'])
+        })
     
-    return Response(
-        zip_buffer.getvalue(),
-        mimetype='application/zip',
-        headers={
-            'Content-Disposition': f'attachment; filename={filename}'
-        }
-    )
+    return jsonify({'success': True, 
+                    'download_links': download_links,
+                    'total_size': total_size,
+                    'total_files':len(valid_files)
+                    })
+    
+    
 
 @app.route('/about')
 @password_change_required  
@@ -1300,6 +1420,7 @@ def file_history():
     
     return render_template('file_history.html', operations=operations)
 
+
 @app.route('/record_download', methods=['POST'])
 @password_change_required
 def record_download():
@@ -1326,6 +1447,79 @@ def record_download():
     
     return jsonify({'success': True})
 
+@app.route('/get_user_quota', methods=['GET'])
+@password_change_required
+def get_user_quota():
+    """获取用户配额信息（用于前端文件大小检查）"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # 管理员没有配额限制
+    if session.get('is_admin'):
+        return jsonify({
+            'success': True,
+            'quota_bytes': float('inf'),  # 无限制
+            'used_bytes': 0,
+            'available_bytes': float('inf')
+        })
+    
+    # 访客也没有配额限制（只能预览不能上传）
+    if session.get('is_visitor'):
+        return jsonify({
+            'success': True,
+            'quota_bytes': 0,
+            'used_bytes': 0,
+            'available_bytes': 0
+        })
+    
+    try:
+        # 普通用户：获取配额信息
+        base_path = os.path.join('userfiles', session['username'])
+        if not os.path.exists(base_path):
+            os.makedirs(base_path)
+        
+        config = app.config['GRACEDISK_CONFIG']
+        db_path = config.get('users_db_path', 'users.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT quota_gb FROM users WHERE id = ?", (session['user_id'],))
+        user_db_info = cursor.fetchone()
+        conn.close()
+
+        quota_bytes = user_db_info['quota_gb'] * (1024**3)
+        used_bytes = get_folder_size(base_path)
+        available_bytes = max(0, quota_bytes - used_bytes)
+        
+        return jsonify({
+            'success': True,
+            'quota_bytes': quota_bytes,
+            'used_bytes': used_bytes,
+            'available_bytes': available_bytes
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取配额信息失败: {str(e)}'}), 500
+
+@app.route('/clear_history', methods=['POST'])
+@password_change_required
+def clear_history():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM file_operations")
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': f'清空历史失败: {str(e)}'}), 500
+
 @app.route('/dashboard')
 @admin_required
 def dashboard():
@@ -1344,31 +1538,58 @@ def dashboard():
         stats = {}
         
         # 近30天登录统计
-        thirty_days_ago = datetime.now() - timedelta(days=30)
-        thirty_days_str = thirty_days_ago.strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute("""
-            SELECT COUNT(*) as total_logins,
-                   COUNT(DISTINCT user_id) as unique_users,
-                   login_type,
-                   DATE(created_at) as login_date
-            FROM login_logs 
-            WHERE created_at >= ? 
-            GROUP BY login_type, DATE(created_at)
-            ORDER BY login_date DESC
-        """, (thirty_days_str,))
+        login_data = []
+        today_logins = {}
         
-        login_data = cursor.fetchall()
-        
-        # 今日登录统计
-        today = datetime.now().strftime('%Y-%m-%d')
-        cursor.execute("""
-            SELECT login_type, COUNT(*) as count
-            FROM login_logs 
-            WHERE DATE(created_at) = ?
-            GROUP BY login_type
-        """, (today,))
-        
-        today_logins = {row['login_type']: row['count'] for row in cursor.fetchall()}
+        try:
+            thirty_days_ago = datetime.now() - timedelta(days=30)
+            thirty_days_str = thirty_days_ago.strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("""
+                SELECT COUNT(*) as total_logins,
+                       COUNT(DISTINCT user_id) as unique_users,
+                       login_type,
+                       DATE(created_at) as login_date
+                FROM login_logs 
+                WHERE created_at >= ? 
+                GROUP BY login_type, DATE(created_at)
+                ORDER BY login_date DESC
+            """, (thirty_days_str,))
+            
+            login_data = cursor.fetchall()
+            
+            # 今日登录统计
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("""
+                SELECT login_type, COUNT(*) as count
+                FROM login_logs 
+                WHERE DATE(created_at) = ?
+                GROUP BY login_type
+            """, (today,))
+            
+            today_logins = {row['login_type']: row['count'] for row in cursor.fetchall()}
+            
+        except sqlite3.OperationalError as e:
+            if "no such table: login_logs" in str(e):
+                # 如果login_logs表不存在，尝试重新创建
+                print("login_logs table missing, attempting to recreate...")
+                cursor.execute('''
+                CREATE TABLE IF NOT EXISTS login_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    login_type TEXT NOT NULL,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+                conn.commit()
+                print("login_logs table recreated.")
+            else:
+                print(f"Error accessing login_logs: {e}")
+            # 使用默认空值
+            login_data = []
+            today_logins = {}
         
         # 文件操作统计（近30天）
         cursor.execute("""

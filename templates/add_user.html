@@ -5,12 +5,31 @@
 {% block head %}
     <style>
         body { display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .container { max-width: 500px; }
-        .card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 2rem 3rem; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); }
+        .container { 
+            max-width: 900px;  /* 从 500px 改为 900px 或更大 */
+            width: 20%;        /* 添加这行，让容器占屏幕宽度的 80% */
+        }
+        .card { 
+            background: rgba(255, 255, 255, 0.25); 
+            backdrop-filter: blur(15px); 
+            -webkit-backdrop-filter: blur(15px); 
+            border: 1px solid rgba(255, 255, 255, 0.2); 
+            border-radius: 12px; 
+            padding: 2rem 3rem; 
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); 
+            width: 100%;       /* 确保 card 占满容器宽度 */
+        }
         h1 { text-align: center; color: #333; margin-bottom: 1.5rem; }
         .form-group { margin-bottom: 1.25rem; }
         .form-group label { display: block; margin-bottom: 0.5rem; color: #555; font-weight: 500; }
-        .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; transition: border-color 0.2s; }
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
         .form-group input:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25); }
         .btn-group { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; }
         .btn-secondary { background-color: #6c757d; }
