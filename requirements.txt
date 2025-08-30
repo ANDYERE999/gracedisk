@@ -9,3 +9,7 @@ PyYAML==6.0.1
 
 # 系统监控 (仪表盘功能需要)
 psutil==5.9.5
+
+# WebSocket 支持 (实时上传进度)
+Flask-SocketIO==5.3.6
+python-socketio==5.9.0

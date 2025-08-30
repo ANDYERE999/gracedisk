@@ -21,3 +21,6 @@ sphinx-rtd-theme>=1.3.0
 # 调试工具
 flask-debugtoolbar>=0.13.1
 pydebug>=1.0.3
+
+# WebSocket 开发工具
+python-socketio[client]>=5.9.0

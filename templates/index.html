@@ -130,7 +130,9 @@
                 <div id="upload-progress" style="display: none;">
                     <p>正在上传文件...</p>
                     <div class="upload-progress-bar">
-                        <div class="upload-progress-fill" id="progress-fill"></div>
+                        <div class="upload-progress-fill" id="progress-fill">
+                            <span id="upload-percentage">0%</span>
+                        </div>
                     </div>
                     <div id="upload-status">准备上传...</div>
                 </div>
@@ -490,6 +492,218 @@ function confirmShare() {
     });
 }
 
+// WebSocket 连接
+let socket = null;
+let currentUploadId = null;
+let isUploading = false;
+let socketConnected = false;
+let connectionRetries = 0;
+const maxRetries = 3;
+
+// 初始化 WebSocket 连接
+function initWebSocket() {
+    if (socket && socket.connected) {
+        return;
+    }
+    
+    // 设置连接配置
+    socket = io({
+        timeout: 10000,  // 10秒连接超时
+        transports: ['websocket', 'polling'],  // 支持降级到轮询
+        upgrade: true,
+        rememberUpgrade: true
+    });
+    
+    socket.on('connect', function() {
+        console.log('WebSocket 连接成功');
+        socketConnected = true;
+        connectionRetries = 0;
+        
+        // 隐藏连接状态消息
+        hideConnectionStatus();
+    });
+    
+    socket.on('disconnect', function() {
+        console.log('WebSocket 连接断开');
+        socketConnected = false;
+        
+        if (isUploading) {
+            // 如果正在上传时断开连接，尝试重连
+            if (connectionRetries < maxRetries) {
+                showConnectionStatus('连接断开，正在重连...', 'warning');
+                setTimeout(() => {
+                    connectionRetries++;
+                    initWebSocket();
+                }, 2000);
+            } else {
+                document.getElementById('upload-status').textContent = '连接断开，上传中断';
+                isUploading = false;
+                showConnectionStatus('连接失败，请刷新页面重试', 'error');
+            }
+        }
+    });
+    
+    socket.on('connect_error', function(error) {
+        console.error('WebSocket 连接错误:', error);
+        socketConnected = false;
+        
+        if (connectionRetries < maxRetries) {
+            const retryTime = Math.min(3, 2 - connectionRetries);
+            showConnectionStatus(`连接失败，${retryTime}秒后重试...`, 'error');
+            setTimeout(() => {
+                connectionRetries++;
+                initWebSocket();
+            }, retryTime * 1000);
+        } else {
+            showConnectionStatus('连接失败，请刷新页面重试', 'error');
+        }
+    });
+    
+    socket.on('upload_progress', function(data) {
+        if (data.upload_id === currentUploadId) {
+            updateUploadProgress(data);
+        }
+    });
+    
+    socket.on('upload_complete', function(data) {
+        if (data.upload_id === currentUploadId) {
+            document.getElementById('upload-status').textContent = '上传完成！';
+            document.getElementById('progress-fill').style.width = '100%';
+            isUploading = false;
+            
+            // 2秒后刷新页面
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
+    });
+    
+    socket.on('upload_error', function(data) {
+        if (data.upload_id === currentUploadId) {
+            document.getElementById('upload-status').textContent = '上传失败: ' + data.error;
+            isUploading = false;
+            
+            // 恢复上传界面
+            setTimeout(() => {
+                document.getElementById('upload-content').style.display = 'block';
+                document.getElementById('upload-progress').style.display = 'none';
+            }, 3000);
+        }
+    });
+}
+
+function showConnectionStatus(message, type) {
+    let statusElement = document.getElementById('connection-status');
+    if (!statusElement) {
+        statusElement = document.createElement('div');
+        statusElement.id = 'connection-status';
+        statusElement.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            z-index: 10000;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        `;
+        document.body.appendChild(statusElement);
+    }
+    
+    statusElement.textContent = message;
+    statusElement.className = type;
+    
+    if (type === 'error') {
+        statusElement.style.backgroundColor = '#ff4757';
+        statusElement.style.color = 'white';
+    } else if (type === 'warning') {
+        statusElement.style.backgroundColor = '#ffa502';
+        statusElement.style.color = 'white';
+    } else {
+        statusElement.style.backgroundColor = '#2ed573';
+        statusElement.style.color = 'white';
+    }
+    
+    statusElement.style.display = 'block';
+}
+
+function hideConnectionStatus() {
+    const statusElement = document.getElementById('connection-status');
+    if (statusElement) {
+        statusElement.style.display = 'none';
+    }
+}
+
+// 页面加载时初始化 WebSocket
+document.addEventListener('DOMContentLoaded', function() {
+    initWebSocket();
+});
+
+// 页面卸载前的警告和清理
+window.addEventListener('beforeunload', function(e) {
+    if (isUploading && socket && socket.connected) {
+        // 发送页面卸载事件到后端
+        socket.emit('page_unload');
+        
+        const confirmationMessage = '文件正在上传中，关闭页面将中断上传。确定要离开吗？';
+        e.returnValue = confirmationMessage;
+        return confirmationMessage;
+    }
+});
+
+// 页面隐藏时的清理（移动设备、标签页切换等）
+window.addEventListener('pagehide', function() {
+    if (isUploading && socket && socket.connected) {
+        socket.emit('page_unload');
+    }
+});
+
+function updateUploadProgress(data) {
+    const progressFill = document.getElementById('progress-fill');
+    const uploadStatus = document.getElementById('upload-status');
+    const progressText = document.getElementById('upload-percentage');
+    
+    // 更新进度条
+    progressFill.style.width = data.progress + '%';
+    
+    // 更新百分比
+    if (progressText) {
+        progressText.textContent = Math.round(data.progress) + '%';
+    }
+    
+    // 格式化速度和剩余时间
+    const speed = formatSpeed(data.speed);
+    const eta = formatTime(data.eta);
+    const uploadedSize = formatFileSize(data.uploaded_bytes);
+    const totalSize = formatFileSize(data.total_bytes);
+    
+    // 更新状态文本
+    uploadStatus.innerHTML = `
+        正在上传: ${data.filename}<br>
+        进度: ${uploadedSize} / ${totalSize}<br>
+        速度: ${speed}<br>
+        剩余时间: ${eta}
+    `;
+}
+
+function formatSpeed(bytesPerSecond) {
+    if (bytesPerSecond < 1024) return bytesPerSecond.toFixed(0) + ' B/s';
+    if (bytesPerSecond < 1024**2) return (bytesPerSecond/1024).toFixed(2) + ' KB/s';
+    if (bytesPerSecond < 1024**3) return (bytesPerSecond/1024**2).toFixed(2) + ' MB/s';
+    return (bytesPerSecond/1024**3).toFixed(2) + ' GB/s';
+}
+
+function formatTime(seconds) {
+    if (!seconds || seconds === Infinity) return '计算中...';
+    if (seconds < 60) return Math.round(seconds) + ' 秒';
+    if (seconds < 3600) return Math.round(seconds / 60) + ' 分钟';
+    return Math.round(seconds / 3600) + ' 小时';
+}
+
+function generateUploadId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
 function handleFileUpload(input) {
     if (input.files.length === 0) return;
     
@@ -502,39 +716,93 @@ function handleFileUpload(input) {
             return; // 已在checkFileSize中显示错误信息
         }
         
-        const uploadContent = document.getElementById('upload-content');
-        const uploadProgress = document.getElementById('upload-progress');
-        const progressFill = document.getElementById('progress-fill');
-        const uploadStatus = document.getElementById('upload-status');
-        
-        // 显示进度界面
-        uploadContent.style.display = 'none';
-        uploadProgress.style.display = 'block';
-        
-        // 模拟上传进度
-        let progress = 0;
-        uploadStatus.textContent = `正在上传: ${file.name}`;
-        
-        const progressInterval = setInterval(() => {
-            progress += Math.random() * 10;
-            if (progress >= 95) {
-                progress = 95;
-                uploadStatus.textContent = '正在处理文件...';
-            }
-            progressFill.style.width = progress + '%';
+        // 确保 WebSocket 连接
+        if (!socket || !socket.connected) {
+            showConnectionStatus('正在连接服务器...', 'warning');
+            initWebSocket();
             
-            if (progress >= 95) {
-                clearInterval(progressInterval);
-                // 实际提交表单
-                document.getElementById('upload-form').submit();
-            }
-        }, 100);
+            // 等待连接建立（最多等待15秒）
+            let waitCount = 0;
+            const maxWait = 15;
+            const checkConnection = () => {
+                if (socket && socket.connected) {
+                    hideConnectionStatus();
+                    startWebSocketUpload(file);
+                } else if (waitCount < maxWait) {
+                    waitCount++;
+                    setTimeout(checkConnection, 1000);
+                } else {
+                    showConnectionStatus('连接服务器超时，请刷新页面重试', 'error');
+                    isUploading = false;
+                }
+            };
+            setTimeout(checkConnection, 1000);
+        } else {
+            startWebSocketUpload(file);
+        }
+        
     }).catch(error => {
         alert('文件检查失败: ' + error.message);
-        // 重置上传界面
-        document.getElementById('upload-content').style.display = 'block';
-        document.getElementById('upload-progress').style.display = 'none';
     });
+}
+
+function startWebSocketUpload(file) {
+    const uploadContent = document.getElementById('upload-content');
+    const uploadProgress = document.getElementById('upload-progress');
+    const progressFill = document.getElementById('progress-fill');
+    const uploadStatus = document.getElementById('upload-status');
+    
+    // 生成唯一上传ID
+    currentUploadId = generateUploadId();
+    isUploading = true;
+    
+    // 显示进度界面
+    uploadContent.style.display = 'none';
+    uploadProgress.style.display = 'block';
+    progressFill.style.width = '0%';
+    uploadStatus.innerHTML = `准备上传: ${file.name}<br>连接服务器...`;
+    
+    // 创建表单数据
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_id', currentUploadId);
+    formData.append('subpath', '{{ current_subpath }}');
+    
+    // 发送上传请求
+    fetch('/upload_websocket', {
+        method: 'POST',
+        headers: {
+            'X-Socket-ID': socket.id
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 上传请求已发送，等待 WebSocket 进度更新
+            uploadStatus.innerHTML = `正在上传: ${file.name}<br>0% - 等待开始...`;
+        } else {
+            throw new Error(data.error || '上传启动失败');
+        }
+    })
+    .catch(error => {
+        isUploading = false;
+        document.getElementById('upload-status').textContent = '上传失败: ' + error.message;
+        
+        // 恢复上传界面
+        setTimeout(() => {
+            document.getElementById('upload-content').style.display = 'block';
+            document.getElementById('upload-progress').style.display = 'none';
+        }, 3000);
+    });
+}
+
+// 全局文件大小格式化函数
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024**2) return (bytes/1024).toFixed(2) + ' KB';
+    if (bytes < 1024**3) return (bytes/1024**2).toFixed(2) + ' MB';
+    return (bytes/1024**3).toFixed(2) + ' GB';
 }
 
 function checkFileSize(file) {
@@ -549,14 +817,6 @@ function checkFileSize(file) {
                 
                 const fileSize = file.size;
                 const availableSpace = data.quota_bytes - data.used_bytes;
-                
-                // 格式化文件大小显示
-                function formatFileSize(bytes) {
-                    if (bytes < 1024) return bytes + ' B';
-                    if (bytes < 1024**2) return (bytes/1024).toFixed(2) + ' KB';
-                    if (bytes < 1024**3) return (bytes/1024**2).toFixed(2) + ' MB';
-                    return (bytes/1024**3).toFixed(2) + ' GB';
-                }
                 
                 if (fileSize > availableSpace) {
                     alert(`文件过大！\n` +

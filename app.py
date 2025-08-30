@@ -1,4 +1,5 @@
 from flask import Flask, session, render_template, request, redirect, url_for, flash, send_file, Response, stream_with_context, jsonify
+from flask_socketio import SocketIO, emit
 import yaml
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -9,6 +10,9 @@ from functools import wraps
 from werkzeug.utils import secure_filename
 import re
 import uuid
+import threading
+import time
+import hashlib
 
 def safe_filename(filename):
     """
@@ -91,6 +95,12 @@ app = Flask(__name__)
 # 设置一个密钥，用于保护 session
 # 在生产环境中，这应该是一个更复杂、更随机的字符串，并且不应该硬编码在代码里
 app.secret_key = 'your_very_secret_key_change_it_later'
+
+# 初始化 SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# 全局变量存储上传会话
+upload_sessions = {}
 
 # 注册一个辅助函数，使其可以在所有模板中使用
 app.jinja_env.filters['format_datetime'] = format_datetime_for_display
@@ -626,8 +636,430 @@ def delete_item(path):
         return redirect(url_for('browse', subpath=parent_path))
     return redirect(url_for('root'))
 
+# WebSocket 事件处理
+@socketio.on('connect')
+def handle_connect():
+    """客户端连接事件"""
+    print(f'Client connected: {request.sid}')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """客户端断开连接事件"""
+    print(f'Client disconnected: {request.sid}')
+    # 清理上传会话（给一些时间让上传完成）
+    if request.sid in upload_sessions:
+        session_info = upload_sessions[request.sid]
+        if session_info.get('status') == 'uploading':
+            # 标记为取消而不是立即中断
+            upload_sessions[request.sid]['status'] = 'cancelled'
+            print(f'Upload marked as cancelled for session: {request.sid}')
+            
+            # 延迟清理，给上传线程一些时间完成
+            session_id = request.sid  # 在请求上下文中获取session_id
+            def delayed_cleanup(sid):
+                time.sleep(5)  # 等待5秒
+                if sid in upload_sessions:
+                    session_info = upload_sessions[sid]
+                    if session_info.get('status') == 'cancelled':
+                        try:
+                            db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
+                            conn = sqlite3.connect(db_path)
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE file_operations 
+                                SET status = 'interrupted' 
+                                WHERE id = ?
+                            """, (session_info.get('operation_id'),))
+                            conn.commit()
+                            conn.close()
+                        except:
+                            pass
+                        
+                        # 清理临时文件
+                        if 'temp_path' in session_info:
+                            temp_path = session_info['temp_path']
+                            if os.path.exists(temp_path):
+                                try:
+                                    os.remove(temp_path)
+                                    print(f'Cleaned up temp file: {temp_path}')
+                                except Exception as e:
+                                    print(f'Failed to clean up temp file {temp_path}: {e}')
+                        
+                        # 删除会话
+                        if sid in upload_sessions:
+                            del upload_sessions[sid]
+            
+            cleanup_thread = threading.Thread(target=delayed_cleanup, args=(session_id,))
+            cleanup_thread.daemon = True
+            cleanup_thread.start()
+        else:
+            # 非上传会话，直接删除
+            del upload_sessions[request.sid]
+
+# 添加页面刷新/关闭时的清理
+@socketio.on('page_unload')
+def handle_page_unload():
+    """处理页面刷新或关闭事件"""
+    print(f'Page unload detected for session: {request.sid}')
+    if request.sid in upload_sessions:
+        session_info = upload_sessions[request.sid]
+        if session_info.get('status') == 'uploading':
+            # 立即标记为取消
+            upload_sessions[request.sid]['status'] = 'cancelled'
+            print(f'Upload cancelled due to page unload: {request.sid}')
+            
+            # 立即清理临时文件
+            if 'temp_path' in session_info:
+                temp_path = session_info['temp_path']
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                        print(f'Immediately cleaned up temp file: {temp_path}')
+                    except Exception as e:
+                        print(f'Failed to immediately clean up temp file {temp_path}: {e}')
+
+# 移除了 start_upload 事件处理，因为上传会话在 real_time_upload_with_progress 中管理
+
+def cleanup_orphaned_temp_files():
+    """清理孤立的临时文件"""
+    try:
+        # 扫描用户文件目录，查找 .tmp 文件
+        userfiles_dir = app.config['GRACEDISK_CONFIG'].get('userfiles_path', 'userfiles')
+        if os.path.exists(userfiles_dir):
+            for root, dirs, files in os.walk(userfiles_dir):
+                for file in files:
+                    if file.endswith('.tmp'):
+                        file_path = os.path.join(root, file)
+                        # 检查文件是否超过1小时（可能是孤立文件）
+                        try:
+                            file_age = time.time() - os.path.getmtime(file_path)
+                            if file_age > 3600:  # 1小时
+                                os.remove(file_path)
+                                print(f'Cleaned up orphaned temp file: {file_path}')
+                        except Exception as e:
+                            print(f'Failed to clean up orphaned temp file {file_path}: {e}')
+    except Exception as e:
+        print(f'Error during orphaned temp file cleanup: {e}')
+
+# 启动定期清理任务
+def start_cleanup_scheduler():
+    """启动定期清理任务"""
+    def cleanup_task():
+        while True:
+            try:
+                time.sleep(300)  # 每5分钟执行一次
+                cleanup_orphaned_temp_files()
+            except Exception as e:
+                print(f'Cleanup scheduler error: {e}')
+    
+    cleanup_thread = threading.Thread(target=cleanup_task)
+    cleanup_thread.daemon = True
+    cleanup_thread.start()
+
+def real_time_upload_with_progress(file_data, file_size, save_path, upload_id, user_id, session_id):
+    """实时上传文件并发送进度"""
+    chunk_size = 64 * 1024  # 64KB chunks
+    uploaded_bytes = 0
+    start_time = time.time()
+    
+    # 确保上传会话存在并标记为正在上传
+    if session_id not in upload_sessions:
+        upload_sessions[session_id] = {
+            'filename': os.path.basename(save_path),
+            'file_size': file_size,
+            'upload_id': upload_id,
+            'uploaded_bytes': 0,
+            'start_time': start_time,
+            'status': 'uploading',
+            'last_progress': 0,
+            'temp_path': None  # 稍后设置
+        }
+    else:
+        upload_sessions[session_id]['status'] = 'uploading'
+        upload_sessions[session_id]['last_progress'] = 0
+    
+    # 记录上传操作到数据库
+    db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO file_operations (user_id, operation_type, file_path, file_size, status) 
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, 'upload', os.path.basename(save_path), file_size, 'in_progress'))
+    operation_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    # 更新上传会话信息
+    upload_sessions[session_id]['operation_id'] = operation_id
+    
+    # 发送初始进度（0%）
+    try:
+        socketio.emit('upload_progress', {
+            'upload_id': upload_id,
+            'filename': os.path.basename(save_path),
+            'progress': 0,
+            'uploaded_bytes': 0,
+            'total_bytes': file_size,
+            'speed': 0,
+            'eta': 0
+        }, room=session_id)
+# 初始进度已发送
+    except Exception as e:
+        print(f'Error sending initial progress: {e}')
+    
+    temp_path = save_path + '.tmp'  # 使用临时文件避免冲突
+    
+    # 保存临时文件路径到会话中
+    if session_id in upload_sessions:
+        upload_sessions[session_id]['temp_path'] = temp_path
+    
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        with open(temp_path, 'wb') as f:
+            data_position = 0
+            
+            while data_position < len(file_data):
+                # 检查是否被中断（增加更宽松的检查）
+                if session_id not in upload_sessions:
+                    # 会话不存在，可能是连接问题
+                    break
+                elif upload_sessions[session_id].get('status') == 'cancelled':
+                    # 上传被中断，删除临时文件
+                    try:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                    except:
+                        pass
+                    
+                    # 更新数据库状态
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE file_operations SET status = 'interrupted' WHERE id = ?", (operation_id,))
+                    conn.commit()
+                    conn.close()
+                    
+                    socketio.emit('upload_error', {
+                        'upload_id': upload_id,
+                        'error': '上传被中断'
+                    }, room=session_id)
+                    return
+                
+                # 获取下一个数据块
+                end_position = min(data_position + chunk_size, len(file_data))
+                chunk = file_data[data_position:end_position]
+                
+                if not chunk:
+                    break
+                
+                f.write(chunk)
+                uploaded_bytes += len(chunk)
+                data_position = end_position
+                
+                # 计算进度和速度
+                elapsed_time = time.time() - start_time
+                progress = (uploaded_bytes / file_size) * 100
+                speed = uploaded_bytes / elapsed_time if elapsed_time > 0 else 0
+                
+                # 估算剩余时间
+                if speed > 0:
+                    remaining_bytes = file_size - uploaded_bytes
+                    eta = remaining_bytes / speed
+                else:
+                    eta = 0
+                
+                # 更新会话状态
+                if session_id in upload_sessions:
+                    upload_sessions[session_id]['uploaded_bytes'] = uploaded_bytes
+                
+                # 发送进度更新（增加更新频率，特别是小文件）
+                should_update = (
+                    uploaded_bytes % (chunk_size * 4) == 0 or  # 每256KB发送一次更新
+                    uploaded_bytes == file_size or              # 完成时
+                    progress - upload_sessions[session_id].get('last_progress', 0) >= 5  # 进度增加5%时
+                )
+                if should_update:
+                    try:
+                        progress_data = {
+                            'upload_id': upload_id,
+                            'filename': os.path.basename(save_path),
+                            'progress': progress,
+                            'uploaded_bytes': uploaded_bytes,
+                            'total_bytes': file_size,
+                            'speed': speed,
+                            'eta': eta
+                        }
+                        socketio.emit('upload_progress', progress_data, room=session_id)
+                        
+                        # 更新最后发送的进度
+                        if session_id in upload_sessions:
+                            upload_sessions[session_id]['last_progress'] = progress
+                    except Exception as e:
+                        print(f'Error sending progress update: {e}')
+                        # 继续上传，不因为进度发送失败而中断
+                
+                # 小延迟以避免阻塞
+                if uploaded_bytes % (chunk_size * 16) == 0:  # 每1MB休息一下
+                    time.sleep(0.005)
+        
+        # 上传完成，原子操作移动临时文件到最终位置
+        try:
+            # Windows 下需要先删除目标文件（如果存在）
+            if os.path.exists(save_path):
+                os.remove(save_path)
+            os.rename(temp_path, save_path)
+        except Exception as e:
+            # 移动失败，清理临时文件
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except:
+                pass
+            raise e
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE file_operations SET status = 'completed' WHERE id = ?", (operation_id,))
+        conn.commit()
+        conn.close()
+        
+        # 清理上传会话
+        if session_id in upload_sessions:
+            upload_sessions[session_id]['status'] = 'completed'
+        
+        socketio.emit('upload_complete', {
+            'upload_id': upload_id,
+            'filename': os.path.basename(save_path),
+            'file_size': file_size
+        }, room=session_id)
+        
+    except Exception as e:
+        # 上传失败，清理临时文件和目标文件
+        for path in [temp_path, save_path]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE file_operations SET status = 'failed' WHERE id = ?", (operation_id,))
+        conn.commit()
+        conn.close()
+        
+        if session_id in upload_sessions:
+            upload_sessions[session_id]['status'] = 'failed'
+        
+        # 根据错误类型提供更有用的错误信息
+        error_msg = str(e)
+        if "Permission denied" in error_msg or "being used by another process" in error_msg:
+            error_msg = "文件被占用或权限不足，请稍后重试"
+        elif "No space left" in error_msg:
+            error_msg = "磁盘空间不足"
+        elif "File name too long" in error_msg:
+            error_msg = "文件名过长"
+        else:
+            error_msg = f"上传失败: {error_msg}"
+        
+        socketio.emit('upload_error', {
+            'upload_id': upload_id,
+            'error': error_msg
+        }, room=session_id)
+
+@app.route('/upload_websocket', methods=['POST'])
+def upload_file_websocket():
+    """WebSocket 实时上传端点"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # 访客不能上传
+    if session.get('is_visitor'):
+        return jsonify({'error': '访客无法上传文件'}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({'error': '没有文件部分'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '未选择文件'}), 400
+
+    upload_id = request.form.get('upload_id', '')
+    subpath = request.form.get('subpath', '')
+    
+    if not upload_id:
+        return jsonify({'error': '缺少上传ID'}), 400
+
+    filename = safe_filename(file.filename)
+    
+    # 确定基础保存路径
+    if session.get('is_admin'):
+        base_path = app.config['GRACEDISK_CONFIG'].get('storage_path')
+    else:
+        base_path = os.path.join('userfiles', session['username'])
+        
+        # 检查用户配额
+        config = app.config['GRACEDISK_CONFIG']
+        db_path = config.get('users_db_path', 'users.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT quota_gb FROM users WHERE id = ?", (session['user_id'],))
+        user_db_info = cursor.fetchone()
+        conn.close()
+
+        quota_bytes = user_db_info['quota_gb'] * (1024**3)
+        used_bytes = get_folder_size(base_path)
+
+        if used_bytes + file.content_length > quota_bytes:
+            return jsonify({'error': '空间不足'}), 413
+
+    # 路径处理和安全校验
+    safe_subpath = os.path.normpath(subpath).lstrip('.\\/')
+    current_path = os.path.join(base_path, safe_subpath)
+    if not os.path.abspath(current_path).startswith(os.path.abspath(base_path)):
+        return jsonify({'error': '无效的上传路径'}), 400
+
+    # 处理文件名冲突（改进版）
+    save_path = os.path.join(current_path, filename)
+    if os.path.exists(save_path):
+        name, ext = os.path.splitext(filename)
+        i = 1
+        while os.path.exists(save_path):
+            new_filename = f"{name}({i}){ext}"
+            save_path = os.path.join(current_path, new_filename)
+            i += 1
+            # 防止无限循环
+            if i > 1000:
+                return jsonify({'error': '文件名冲突过多，请重命名文件'}), 400
+    
+    # 读取文件数据到内存（避免文件流被关闭的问题）
+    try:
+        file.seek(0)  # 确保从头开始读取
+        file_data = file.read()
+        file_size = len(file_data)
+    except Exception as e:
+        return jsonify({'error': f'读取文件失败: {str(e)}'}), 400
+    
+    # 启动后台上传线程
+    session_id = request.headers.get('X-Socket-ID', '')
+    if session_id:
+        upload_thread = threading.Thread(
+            target=real_time_upload_with_progress,
+            args=(file_data, file_size, save_path, upload_id, session['user_id'], session_id)
+        )
+        upload_thread.daemon = True
+        upload_thread.start()
+        
+        return jsonify({'success': True, 'upload_id': upload_id})
+    else:
+        return jsonify({'error': '缺少 Socket ID'}), 400
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    """传统上传方式（保持兼容性）"""
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
@@ -703,7 +1135,33 @@ def upload_file():
                 save_path = os.path.join(current_path, f"{name}({i}){ext}")
                 i += 1
         
-        file.save(save_path)
+        # 使用临时文件保存，然后原子移动
+        temp_path = save_path + '.tmp'
+        try:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            file.save(temp_path)
+            
+            # 原子移动到最终位置
+            if os.path.exists(save_path):
+                os.remove(save_path)
+            os.rename(temp_path, save_path)
+        except Exception as e:
+            # 清理临时文件
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            
+            error_msg = str(e)
+            if "Permission denied" in error_msg or "being used by another process" in error_msg:
+                flash("文件被占用或权限不足，请稍后重试", 'error')
+            elif "No space left" in error_msg:
+                flash("磁盘空间不足", 'error')
+            else:
+                flash(f"上传失败: {error_msg}", 'error')
+            return redirect(request.referrer or url_for('root'))
         
         # 记录上传操作
         db_path = app.config['GRACEDISK_CONFIG'].get('users_db_path', 'users.db')
@@ -1520,6 +1978,17 @@ def clear_history():
     except Exception as e:
         return jsonify({'error': f'清空历史失败: {str(e)}'}), 500
 
+@app.route('/cleanup_temp_files', methods=['POST'])
+@admin_required
+def cleanup_temp_files():
+    """手动清理临时文件"""
+    try:
+        cleanup_orphaned_temp_files()
+        flash('临时文件清理完成', 'success')
+    except Exception as e:
+        flash(f'清理失败: {str(e)}', 'error')
+    return redirect(url_for('dashboard'))
+
 @app.route('/dashboard')
 @admin_required
 def dashboard():
@@ -1693,7 +2162,13 @@ if __name__ == '__main__':
     if host == '0.0.0.0':
         print("🌍 服务器已向公网开放，请确保防火墙和安全设置正确！")
     print(f"🔧 调试模式: {'开启' if debug else '关闭'}")
+    print(f"🔌 WebSocket 支持: 已启用")
+    print("🧹 自动清理任务: 已启用")
     print("=" * 50)
     
-    app.run(host=host, port=port, debug=debug)
+    # 启动定期清理任务
+    start_cleanup_scheduler()
+    
+    # 使用 SocketIO 启动应用
+    socketio.run(app, host=host, port=port, debug=debug)
 

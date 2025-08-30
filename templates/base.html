@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="icon" href="{{ url_for('static', filename='icons/app_icon.ico') }}" type="image/x-icon">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/app_icon.png') }}">
+    <!-- Socket.IO 客户端库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     {% block head %}{% endblock %}
 </head>
 <body{% if has_background_image() %} class="has-background"{% endif %}>

@@ -6,7 +6,14 @@
 <div class="dashboard-container">
     <div class="dashboard-header">
         <h1>📊 管理员仪表盘</h1>
-        <a href="{{ url_for('root') }}" class="back-btn">返回文件管理</a>
+        <div class="dashboard-actions">
+            <form method="POST" action="{{ url_for('cleanup_temp_files') }}" style="display: inline;">
+                <button type="submit" class="cleanup-btn" onclick="return confirm('确定要清理所有临时文件吗？')">
+                    🧹 清理临时文件
+                </button>
+            </form>
+            <a href="{{ url_for('root') }}" class="back-btn">返回文件管理</a>
+        </div>
     </div>
 
     <!-- 概览卡片 -->
